@@ -103,8 +103,7 @@ var Syntax = estraverse.Syntax;
 // シーケンシャル実行
 var callbacksIndex = 0;
 // シーケンシャルに実行する関数リスト
-// var seq = [ getFileList, parseFile, createDependencyTree ];
-var seq = [ getFileList, parseFile, createSrcDependencyTree ];
+var seq = [ getFileList, parseFile, createDependencyTree ];
 // returnResultは必ず最後
 seq.push(returnResult);
 
@@ -274,60 +273,114 @@ function createSrcInfo(text) {
 	return srcInfo;
 }
 
-// /**
-// * SyntaxTreeからリソース名(exposeしている名前空間)を取得
-// *
-// * @param text
-// * @returns {Object}
-// */
-// function createDependsMap(text) {
-// // SyntaxTreeをみてexposeされている__nameを取得するようにする
-// var dependsMap = {};
-// var nameToDefObj = {};
-// var tmpDepends = [];
-// var tmpDef = null;
-// var ast = esprima.parse(text);
-// estraverse.traverse(ast, {
-// leave : function(node, parent) {
-// if (node.type === Syntax.Property && node.key
-// && node.key.name === '__name') {
-// var name = node.value.value;
-// if (nameToDefObj[name]) {
-// throw new Error('同一の名前で定義オブジェクトが複数あります');
-// }
-// nameToDefObj[name] = parent;
-// if (tmpDef === parent) {
-// dependsMap[name] = tmpDepends;
-// tmpDef = null;
-// tmpDepends = [];
-// } else {
-// dependsMap[name] = [];
-// }
-// return;
-// }
-// if (node.type === Syntax.Property && isRequireNode(node)) {
-// var val = node.value.arguments[0].value;
-// // ejsは除く
-// if (val.lastIndexOf('.ejs') === val.length - 4) {
-// return;
-// }
-//
-// var def = parent;
-// for ( var name in nameToDefObj) {
-// if (nameToDefObj[name] === def) {
-// dependsMap[name] = dependsMap[name] || [];
-// dependsMap[name].push(val);
-// return;
-// }
-// }
-// // 探索しているオブジェクトの__nameが未探索の場合
-// tmpDepends.push(val);
-// tmpDef = def;
-// }
-// }
-// });
-// return dependsMap;
-// }
+/**
+ * jsを解析して、解析結果を返します
+ *
+ * <p>
+ * 以下のようなオブジェクトを返します
+ * </p>
+ *
+ * <pre>
+ * {
+ * 	srcInfo : jsファイルの情報,
+ *  names: jsファイルで定義されている名前空間のリスト
+ * 	namespaceInfos : jsファイルから取得した名前空間情報の配列
+ * }
+ * </pre>
+ *
+ * @param text
+ * @returns {Object}
+ *
+ */
+function createDependsInfoObject(text) {
+	var names = [];
+	var depends = [];
+	var srcInfo = {
+		depends : depends
+	};
+
+	var nameToDefObj = {};
+	var tmpDepends = [];
+	var tmpDef = null;
+	var namespaceDepensMap = {};
+
+	var ast = esprima.parse(text);
+	estraverse.traverse(ast, {
+		leave : function(node, parent) {
+			if (node.type === Syntax.Property && node.key
+					&& node.key.name === '__name') {
+				var name = node.value.value;
+				names.push(name);
+
+				// 名前空間の依存関係を検出
+				nameToDefObj[name] = parent;
+				if (tmpDef === parent) {
+					namespaceDepensMap[name] = tmpDepends;
+					tmpDef = null;
+					tmpDepends = [];
+				} else {
+					namespaceDepensMap[name] = [];
+				}
+				return;
+			}
+
+			// ソースファイル中にrequire呼び出しがある場合、ソース間の依存関係があるとみなす
+			if (isRequireNode(node)) {
+				var val = node.arguments[0].value;
+				// ejsは除く
+				if (val.lastIndexOf('.ejs') === val.length - 4) {
+					return;
+				}
+				depends.push(val);
+			}
+
+			// オブジェクト定義の値にrequire呼び出しがある場合はそのオブジェクトが定義されている名前空間と紐づける
+			if (node.type === Syntax.Property && isRequireNode(node.value)) {
+				var val = node.value.arguments[0].value;
+				// ejsは除く
+				if (val.lastIndexOf('.ejs') === val.length - 4) {
+					return;
+				}
+
+				var def = parent;
+				for ( var name in nameToDefObj) {
+					if (nameToDefObj[name] === def) {
+						namespaceDepensMap[name] = namespaceDepensMap[name]
+								|| [];
+						namespaceDepensMap[name].push(val);
+						return;
+					}
+				}
+				// 探索しているオブジェクトの__nameが未探索の場合
+				// 次に__nameが出てきた時にチェックできるように覚えておく
+				tmpDepends.push(val);
+				tmpDef = def;
+			}
+
+		}
+	});
+	// srcInfo.dependsについて自分のソースファイルで定義されいてるものは除く
+	for (var i = 0, l = depends.length; i < l; i++) {
+		if (names.indexOf(depends[i]) !== -1) {
+			depends.splice(i, 1);
+			i--;
+			l--;
+		}
+	}
+	// namespaceInfosの作成
+	var namespaceInfos = [];
+	for ( var name in namespaceDepensMap) {
+		namespaceInfos.push({
+			name : name,
+			depends : namespaceDepensMap[name]
+		});
+	}
+	return {
+		srcInfo : srcInfo,
+		names : names,
+		namespaceInfos : namespaceInfos
+	};
+}
 
 /**
  * def以下の各定義オブジェクトについて処理を行う(幅優先)
@@ -367,6 +420,17 @@ function doForEachDefDepthFirst(def, func) {
 	innerExec(def);
 }
 
+/**
+ * @param info
+ * @returns infoから参照できるInfoオブジェクトを列挙した配列
+ */
+function getReferenceable(info) {
+	var ret = [];
+	doForEachDef(info, function(o) {
+		ret.push(o);
+	});
+	return ret;
+}
 // -----------------------------------------------------
 // Body
 // -----------------------------------------------------
@@ -423,22 +487,42 @@ function parseFile(fileList) {
 	}
 }
 
-function createSrcDependencyTree(srcMap) {
+function createDependencyTree(srcMap) {
 	var srcInfos = [];
+	var namespaceInfos = [];
 	var namespaceSrcInfoMap = {};
+	var srcNamespaceMap = {};
+	var namespaceNamespaceInfoMap = {};
+
+	// 依存関係を求める
+	// 最初に、全てのjsファイルを分析して、ツリーの作成に必要なリスト、マップを作成する
 	for ( var src in srcMap) {
 		var text = srcMap[src];
-		// exposeされている名前と、その名前(定義オブジェクト)が使用している名前(定義オブジェクト名)のマップを取得
 		print('[解析開始] ' + src);
-		var srcInfo = createSrcInfo(text);
+		var infoObj = createDependsInfoObject(text);
+
+		// ソースの依存関係
+		var srcInfo = infoObj.srcInfo;
+		var names = infoObj.names;
 		srcInfo.src = src;
-		var names = srcInfo.names;
+		srcNamespaceMap[src] = names;
 		for (var i = 0, l = names.length; i < l; i++) {
 			namespaceSrcInfoMap[names[i]] = srcInfo;
 		}
 		srcInfos.push(srcInfo);
+
+		// 名前空間の依存関係
+		Array.prototype.push.apply(namespaceInfos, infoObj.namespaceInfos);
+		for (var i = 0, l = namespaceInfos.length; i < l; i++) {
+			namespaceNamespaceInfoMap[namespaceInfos[i].name] = namespaceInfos[i];
+		}
 	}
-	// dependsにある名前(文字列)をSrcInfoオブジェクトに変更
+
+	// -------------------------------------
+	// ソースの依存関係ツリーを作成
+	// -------------------------------------
+
+	// srcInfo.dependsにある名前(文字列)をSrcInfoオブジェクトに変更
 	for (var i = 0, l = srcInfos.length; i < l; i++) {
 		var srcInfo = srcInfos[i];
 		var depends = srcInfo.depends;
@@ -446,52 +530,77 @@ function createSrcDependencyTree(srcMap) {
 			depends.splice(j, 1, namespaceSrcInfoMap[depends[j]]);
 		}
 	}
-
 	// ツリーの作成
-	var dependencyTree = [];
-	var currentReferenceable = [];
-	/**
-	 * @param _srcInfo
-	 * @returns _srcInfoから参照できるsrcInfoを列挙した配列
-	 */
-	function getReferenceable(_srcInfo) {
-		var ret = [];
-		doForEachDef(_srcInfo, function(s) {
-			ret.push(s);
-		});
-		return ret;
-	}
+	var srcDependencyTree = [];
+	var referenceableSrcInfos = [];
 	for (var i = 0, l = srcInfos.length; i < l; i++) {
 		var srcInfo = srcInfos[i];
-		if (currentReferenceable.indexOf(srcInfo) !== -1) {
+		if (referenceableSrcInfos.indexOf(srcInfo) !== -1) {
 			// ツリーに追加済みノードから参照できるならツリーに追加しない
 			continue;
 		}
 		// 参照可能ノードに追加
 		var referenceable = getReferenceable(srcInfo);
-		Array.prototype.push.apply(currentReferenceable, referenceable);
+		Array.prototype.push.apply(referenceableSrcInfos, referenceable);
 
 		// 追加するノードがツリーのルートにあるノードを参照しているなら、それを消す
-		for (var j = 0, len = dependencyTree.length; j < len; j++) {
-			if (referenceable.indexOf(dependencyTree[j]) !== -1) {
-				dependencyTree.splice(j, 1);
+		for (var j = 0, len = srcDependencyTree.length; j < len; j++) {
+			if (referenceable.indexOf(srcDependencyTree[j]) !== -1) {
+				srcDependencyTree.splice(j, 1);
 				len--;
 				j--;
 			}
 		}
 		// ツリーに追加
-		dependencyTree.push(srcInfo);
+		srcDependencyTree.push(srcInfo);
 	}
 
-	// ソースの読み込み順を依存関係ツリーから取得
-	var srcList = [];
-	var checkedDefs = [];
-	for (var i = 0, l = dependencyTree.length; i < l; i++) {
-		var srcInfo = dependencyTree[i];
-		if (checkedDefs.indexOf(srcInfo) !== -1) {
+	// -------------------------------------
+	// 名前空間の依存関係ツリーを作成
+	// -------------------------------------
+	var namespaceDependencyTree = [];
+	var referenceableNamespaceInfos = [];
+	// namespaceInfo.dependsにある名前(文字列)をnamespaceInfoオブジェクトに変更
+	for (var i = 0, l = namespaceInfos.length; i < l; i++) {
+		var info = namespaceInfos[i];
+		var name = info.name;
+		var depends = info.depends;
+		for (var j = 0, len = depends.length; j < len; j++) {
+			info.depends.splice(j, 1, namespaceNamespaceInfoMap[depends[j]]);
+		}
+	}
+
+	for (var i = 0, l = namespaceInfos.length; i < l; i++) {
+		var info = namespaceInfos[i];
+		if (referenceableNamespaceInfos.indexOf(info) !== -1) {
+			// ツリーに追加済みノードから参照できるならツリーに追加しない
 			continue;
 		}
-		doForEachDefDepthFirst(srcInfo, function(s) {
+		// 参照可能ノードに追加
+		var referenceable = getReferenceable(info);
+		Array.prototype.push.apply(referenceableNamespaceInfos, referenceable);
+
+		// 追加するノードがツリーのルートにあるノードを参照しているなら、それを消す
+		for (var j = 0, len = namespaceDependencyTree.length; j < len; j++) {
+			if (referenceable.indexOf(namespaceDependencyTree[j]) !== -1) {
+				namespaceDependencyTree.splice(j, 1);
+				len--;
+				j--;
+			}
+		}
+		// ツリーに追加
+		namespaceDependencyTree.push(info);
+	}
+
+	// ソースの読み込み順をソース依存関係ツリーから取得
+	var srcList = [];
+	var checkedDefs = [];
+	for (var i = 0, l = srcDependencyTree.length; i < l; i++) {
+		var info = srcDependencyTree[i];
+		if (checkedDefs.indexOf(info) !== -1) {
+			continue;
+		}
+		doForEachDefDepthFirst(info, function(s) {
 			if (checkedDefs.indexOf(s) !== -1) {
 				return;
 			}
@@ -501,121 +610,36 @@ function createSrcDependencyTree(srcMap) {
 			}
 		});
 	}
-	next(dependencyTree, srcList);
+	next({
+		srcNamespaceMap : srcNamespaceMap,
+		srcDependencyTree : srcDependencyTree,
+		namespaceDependencyTree : namespaceDependencyTree,
+		srcList : srcList
+	});
 }
-
-// /**
-// * 依存関係ツリーとソースリストの作成
-// *
-// * @param srcMap
-// */
-// function createDependencyTree(srcMap) {
-// var defs = [];
-// var namespaceSrcMap = {};
-// for ( var src in srcMap) {
-// var text = srcMap[src];
-// // exposeされている名前と、その名前(定義オブジェクト)が使用している名前(定義オブジェクト名)のマップを取得
-// print('[解析開始] ' + src);
-// var dependsMap = createDependsMap(text);
-// for ( var name in dependsMap) {
-// var depends = dependsMap[name];
-// // srcの依存ツリー作成に必要
-// namespaceSrcMap[name] = src;
-//
-// // 依存定義オブジェクト
-// var def = {
-// name : name,
-// src : src,
-// depends : depends
-// };
-//
-// // 名前(文字列)を{name,src,depends}を持つ依存定義オブジェクトに変更
-// for (var i = 0, l = depends.length; i < l; i++) {
-// var dependName = depends[i];
-// for (var j = 0, len = defs.length; j < len; j++) {
-// if (defs[j].name === dependName) {
-// depends.splice(i, 1, defs[j]);
-// }
-// }
-// }
-// for (var i = 0, l = defs.length; i < l; i++) {
-// doForEachDef(defs[i], function(d, parent) {
-// if (d === name) {
-// parent.depends
-// .splice(parent.depends.indexOf(d), 1, def);
-// }
-// });
-// }
-// defs.push(def);
-// }
-// }
-// // ツリーの作成
-// var dependencyTree = [];
-// var currentReferenceable = [];
-//
-// /**
-// * @param _def
-// * @returns _defから参照できるdefオブジェクトを列挙した配列
-// */
-// function getReferenceable(_def) {
-// var ret = [];
-// doForEachDef(_def, function(d) {
-// ret.push(d);
-// });
-// return ret;
-// }
-//
-// for (var i = 0, l = defs.length; i < l; i++) {
-// var def = defs[i];
-// if (currentReferenceable.indexOf(def) !== -1) {
-// // ツリーに追加済みノードから参照できるならツリーに追加しない
-// continue;
-// }
-// // 参照可能ノードに追加
-// var referenceable = getReferenceable(def);
-// Array.prototype.push.apply(currentReferenceable, referenceable);
-//
-// // 追加するノードがツリーのルートにあるノードを参照しているなら、それを消す
-// for (var j = 0, len = dependencyTree.length; j < len; j++) {
-// if (referenceable.indexOf(dependencyTree[j]) !== -1) {
-// dependencyTree.splice(j, 1);
-// len--;
-// j--;
-// }
-// }
-// // ツリーに追加
-// dependencyTree.push(def);
-// }
-//
-// // ソースの読み込み順を依存関係ツリーから取得
-// var srcList = [];
-// var checkedDefs = [];
-// for (var i = 0, l = dependencyTree.length; i < l; i++) {
-// var def = dependencyTree[i];
-// if (checkedDefs.indexOf(def) !== -1) {
-// continue;
-// }
-// doForEachDefDepthFirst(def, function(d) {
-// if (checkedDefs.indexOf(d) !== -1) {
-// return;
-// }
-// if (srcList.indexOf(d.src) === -1) {
-// srcList.push(d.src);
-// checkedDefs.push(d);
-// }
-// });
-// }
-// next(dependencyTree, srcList);
-// }
 
 /**
  * 結果をresponseに出力
  *
- * @param dependencyTree
- * @param srcList
+ * @param {Object}
+ *            resultObj 以下のようなオブジェクト
+ *
+ * <pre>
+ * {
+ * 	srcNamespaceMap : srcNamespaceMap,
+ * 	srcDependencyTree : srcDependencyTree,
+ * 	namespaceDependencyTree : namespaceDependencyTree,
+ * 	srcList : srcList
+ * }
+ * </pre>
+ *
  */
-function returnResult(dependencyTree, srcList) {
+function returnResult(resultObj) {
 	print('解析が終了しました');
+	var srcNamespaceMap = resultObj.srcNamespaceMap;
+	var srcDependencyTree = resultObj.srcDependencyTree;
+	var namespaceDependencyTree = resultObj.namespaceDependencyTree;
+	var srcList = resultObj.srcList;
 
 	if (isNodeJs) {
 		res.writeHead(200, {
@@ -624,8 +648,14 @@ function returnResult(dependencyTree, srcList) {
 		res.write('【依存関係に基づいたソースの読み込み順序】\n');
 		res.write(JSON.stringify(srcList, null, "    "));
 		res.write('\n\n');
-		res.write('【依存関係】\n');
-		res.write(JSON.stringify(dependencyTree, null, "    "));
+		res.write('【ソースと名前空間定義の対応】\n');
+		res.write(JSON.stringify(srcNamespaceMap, null, "    "));
+		res.write('\n\n');
+		res.write('【ソースの依存関係】\n');
+		res.write(JSON.stringify(srcDependencyTree, null, "    "));
+		res.write('\n\n');
+		res.write('【名前空間の依存関係】\n');
+		res.write(JSON.stringify(namespaceDependencyTree, null, "    "));
 		res.end();
 	} else {
 		// ${srcList}プロパティに代入
