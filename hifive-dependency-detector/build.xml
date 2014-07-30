@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project name="MargeSrcBuilder" basedir="." default="build">
-	<property name="src.dir" value="WebContent/app" />
 	<property name="build.dir" value="WebContent/build" />
 	<property name="build.filename" value="marge.js" />
 
@@ -14,6 +13,10 @@
 	</target>
 
 	<target name="build" depends="clean">
+		<property name="src.dir" value="WebContent/app" />
+		<!-- require関数の別名定義 -->
+		<!-- <property name="require.functions" value="h5.res.require,req,util.req" /> -->
+
 		<script language="javascript" src="src/getSrcList.js">
 		</script>
 

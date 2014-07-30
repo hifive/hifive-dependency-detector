@@ -24,6 +24,8 @@ var srcDir = '../WebContent/app';
  * </p>
  */
 var requireFunctions = [ 'h5.res.require' ];
+// require関数の別名定義
+// var requireFunctions = [ 'h5.res.require', 'req', 'util.req' ];
 
 /** js解析オブジェクト */
 var esprima, estraverse;
@@ -31,15 +33,14 @@ var esprima, estraverse;
 /** esprimaのパス(nodeから実行時用。このjsファイルからの相対パス) */
 var PATH_ESPRIMA_NODEJS = './res/lib/esprima/esprima.js';
 
-/** estraversのパス(nodeから実行時用。このjsファイルからの相対パス)  */
+/** estraversのパス(nodeから実行時用。このjsファイルからの相対パス) */
 var PATH_ESTRAVERSE_NODEJS = './res/lib/estraverse/estraverse.js';
 
 /** esprimaのパス(Antからの実行時用。Ant実行xmlファイルからの相対パス) */
 var PATH_ESPRIMA_ANT = './src/res/lib/esprima/esprima.js';
 
-/** estraversのパス(Antからの実行時用。Ant実行xmlファイルからの相対パス)  */
+/** estraversのパス(Antからの実行時用。Ant実行xmlファイルからの相対パス) */
 var PATH_ESTRAVERSE_ANT = './src/res/lib/estraverse/estraverse.js';
-
 
 /** NodeJsで使用するクラス */
 var http, fs, path;
