@@ -1,29 +1,45 @@
-//-------------------------------------
-// Const
-//-------------------------------------
-/** node.jsで起動するときのサーバのポート。変更する場合はここを修正してください。 */
-var PORT = 8081;
-
 // -------------------------------------
 // プロジェクト設定
 // -------------------------------------
+/** node.jsで起動するときのサーバのポート。変更する場合はここを修正してください。 */
+var PORT = 8081;
+
 /**
  * 依存関係計算のソースのあるディレクトリ。指定されたフォルダ以下のjsファイルを対象にします。
  * <p>
- * node.jsから実行した場合、この変数に設定された値を使用します。
- * Antからの実行の場合、${src.dir}が設定されていればその設定を使用します。
+ * node.jsから実行した場合、この変数に設定された値を使用します。 Antからの実行の場合、${src.dir}が設定されていればその設定を使用します。
  * </p>
  */
 var srcDir = '../WebContent/app';
 
+/**
+ * 依存定義関数名のリスト
+ * <p>
+ * ここで定義された変数名を使った関数呼び出しを依存定義の呼び出しとみなして、依存関係を解析します。
+ * Antから実行する場合は${require.functions}に格納した値を使用します
+ * </p>
+ * <p>
+ * オブジェクトのプロパティにrequireを持つ場合は"."区切りで指定してください。
+ * (高速化のためinit()関数内で"."区切りのものはsplit('.')したものに差し替えています)
+ * </p>
+ */
+var requireFunctions = [ 'h5.res.require' ];
+
 /** js解析オブジェクト */
 var esprima, estraverse;
 
-/** esprimaのパス */
-var PATH_ESPRIMA = 'src/res/lib/esprima/esprima.js';
+/** esprimaのパス(nodeから実行時用。このjsファイルからの相対パス) */
+var PATH_ESPRIMA_NODEJS = './res/lib/esprima/esprima.js';
 
-/** estraversのパス */
-var PATH_ESTRAVERSE = 'src/res/lib/estraverse/estraverse.js';
+/** estraversのパス(nodeから実行時用。このjsファイルからの相対パス)  */
+var PATH_ESTRAVERSE_NODEJS = './res/lib/estraverse/estraverse.js';
+
+/** esprimaのパス(Antからの実行時用。Ant実行xmlファイルからの相対パス) */
+var PATH_ESPRIMA_ANT = './src/res/lib/esprima/esprima.js';
+
+/** estraversのパス(Antからの実行時用。Ant実行xmlファイルからの相対パス)  */
+var PATH_ESTRAVERSE_ANT = './src/res/lib/estraverse/estraverse.js';
+
 
 /** NodeJsで使用するクラス */
 var http, fs, path;
@@ -45,8 +61,8 @@ if (isNodeJs) {
 	http = require('http');
 	fs = require('fs');
 	path = require('path');
-	esprima = require();
-	estraverse = require(PATH_ESTRAVERSE);
+	esprima = require(PATH_ESPRIMA_NODEJS);
+	estraverse = require(PATH_ESTRAVERSE_NODEJS);
 } else {
 	importClass(java.io.File);
 	importClass(java.io.FileReader);
@@ -65,12 +81,19 @@ if (isNodeJs) {
 						.readAllBytes(java.nio.file.Paths.get(path))));
 	};
 	// 外部jsをインクルード
-	require(PATH_ESPRIMA); // esprima
-	require(PATH_ESTRAVERSE); // estraverse
+	require(PATH_ESPRIMA_ANT); // esprima
+	require(PATH_ESTRAVERSE_ANT); // estraverse
 
 	// 呼び出し元Antで定義されたsrc.dirを取得
 	srcDir = project.getProperty('src.dir') || srcDir;
+
+	// 呼び出し元Antで定義されたrequire.functions}を取得
+	requireFunctions = project.getProperty('require.functions')
+			|| requireFunctions;
 }
+
+/** estraversのSyntaxオブジェクト */
+var Syntax = estraverse.Syntax;
 
 // -----------------------------------------------------
 // シーケンシャル実行
@@ -86,10 +109,6 @@ function next() {
 	var callback = seq[callbacksIndex++];
 	return callback && callback.apply(this, arguments);
 }
-function init() {
-	callbacksIndex = 0;
-}
-
 // -------------------------------------
 // Functions
 // -------------------------------------
@@ -141,6 +160,13 @@ function readDir(dir, callback) {
 		callback(fileList);
 	}
 }
+
+/**
+ * filepathがディレクトリかどうか
+ *
+ * @param filepath
+ * @returns
+ */
 function isDir(filepath) {
 	if (/\/$/.test(filepath)) {
 		filepath = filepath.substr(0, filepath.lastIndexOf('/') - 1);
@@ -148,13 +174,61 @@ function isDir(filepath) {
 	return (path.existsSync(filepath) && fs.statSync(filepath).isDirectory());
 }
 
+/**
+ * filepathが".js"で終わるファイルかどうか
+ *
+ * @param filepath
+ * @returns
+ */
 function isJsFile(filepath) {
 	return fs.statSync(filepath).isFile() && /.*\.js$/.test(filepath);
 }
 
-function endsWith(str, suffix) {
-	var sub = str.length - suffix.length;
-	return (sub >= 0) && (str.lastIndexOf(suffix) === sub);
+/**
+ * 指定されたノードがh5.res.requireの呼び出し、またはh5.res.requireが格納されている変数の呼び出しかどうか
+ *
+ * @param {Node}
+ *            node estraverseで解析したノード
+ * @returns {Boolean}
+ */
+function isRequireNode(node) {
+	// 関数呼び出しであること
+	if (node.value.type !== Syntax.CallExpression) {
+		return false;
+	}
+	var callee = node.value.callee;
+	for (var i = 0, l = requireFunctions.length; i < l; i++) {
+		var funcName = requireFunctions[i];
+		if (typeof funcName === 'string') {
+			// オブジェクト区切りでないなら関数名を比較
+			if (callee.name === funcName) {
+				return true;
+			}
+		} else {
+			// オブジェクト区切りの場合
+			var target = callee;
+			var isMatch = false;
+			for (var index = funcName.length - 1; index >= 0; index--) {
+				var expectProp = funcName[index];
+				if (index === 0) {
+					isMatch = target.name === expectProp;
+					break;
+				}
+				if (!target.property || target.property.name !== expectProp) {
+					break;
+				}
+				target = target.object;
+			}
+			if (isMatch) {
+				return true;
+			}
+			console.log(JSON.stringify({
+				isMatch : isMatch,
+				callee : callee
+			}, null, '   '));
+		}
+	}
+	return false;
 }
 
 /**
@@ -170,7 +244,6 @@ function createDependsMap(text) {
 	var tmpDepends = [];
 	var tmpDef = null;
 	var ast = esprima.parse(text);
-	var Syntax = estraverse.Syntax;
 	estraverse.traverse(ast, {
 		leave : function(node, parent) {
 			if (node.type === Syntax.Property && node.key
@@ -189,14 +262,7 @@ function createDependsMap(text) {
 				}
 				return;
 			}
-			if (node.type === Syntax.Property
-					&& node.value.type === Syntax.CallExpression
-					&& node.value.callee.object
-					&& node.value.callee.object.object
-					&& node.value.callee.object.object.name === 'h5'
-					&& node.value.callee.object.property
-					&& node.value.callee.object.property.name === 'res'
-					&& node.value.callee.property.name === 'require') {
+			if (node.type === Syntax.Property && isRequireNode(node)) {
 				var val = node.value.arguments[0].value;
 				// ejsは除く
 				if (val.lastIndexOf('.ejs') === val.length - 4) {
@@ -219,6 +285,7 @@ function createDependsMap(text) {
 	});
 	return dependsMap;
 }
+
 /**
  * def以下の各定義オブジェクトについて処理を行う(幅優先)
  *
@@ -260,7 +327,6 @@ function doForEachDefDepthFirst(def, func) {
 // -----------------------------------------------------
 // Body
 // -----------------------------------------------------
-
 /**
  * ファイルリスト取得
  */
@@ -446,6 +512,23 @@ function returnResult(dependencyTree, srcList) {
 // -----------------------------------------------------
 // 実行
 // -----------------------------------------------------
+/**
+ * 初期化処理
+ */
+function init() {
+	// シーケンス処理のindexを0
+	callbacksIndex = 0;
+
+	// requireFunctionsの解析("."区切りのものを配列にする)
+	for (var i = 0, l = requireFunctions.length; i < l; i++) {
+		var funcName = requireFunctions[i];
+		if (funcName.indexOf('.') === -1) {
+			continue;
+		}
+		requireFunctions[i] = funcName.split('.');
+	}
+}
+
 function main(request, response) {
 	print('getSrcList start');
 	if (isNodeJs) {
