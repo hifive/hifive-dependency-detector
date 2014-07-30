@@ -222,10 +222,6 @@ function isRequireNode(node) {
 			if (isMatch) {
 				return true;
 			}
-			console.log(JSON.stringify({
-				isMatch : isMatch,
-				callee : callee
-			}, null, '   '));
 		}
 	}
 	return false;
