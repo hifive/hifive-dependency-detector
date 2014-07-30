@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="MargeSrcBuilder" basedir="." default="build">
+	<property name="src.dir" value="WebContent/app" />
+	<property name="build.dir" value="WebContent/build" />
+	<property name="build.filename" value="marge.js" />
+
+	<path id="base.path">
+		<fileset dir="${lib.project.dir}" includes="**/*.jar" />
+	</path>
+
+	<target name="clean">
+		<delete dir="${build.dir}" />
+		<mkdir dir="${build.dir}" />
+	</target>
+
+	<target name="build" depends="clean">
+		<script language="javascript" src="src/getSrcList.js">
+		</script>
+
+		<concat destfile="${build.dir}/${build.filename}" encoding="utf-8" outputencoding="utf-8" fixlastline="yes">
+			<filelist files="${srcList}" />
+		</concat>
+		<echo message="${srcList}" />
+
+		<property name="output.dir" location="${build.dir}" />
+		<echo message="ビルドしたファイルを${build.dir}に出力しました。" />
+	</target>
+</project>
