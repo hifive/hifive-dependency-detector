@@ -193,7 +193,7 @@ function isJsFile(filepath) {
  *            node estraverseで解析したノード
  * @returns {Boolean}
  */
-function isRequireNode(node) {
+function isRequireCalleeNode(node) {
 	// 関数呼び出しであること
 	if (node.type !== Syntax.CallExpression) {
 		return false;
@@ -204,7 +204,7 @@ function isRequireNode(node) {
 		if (typeof funcName === 'string') {
 			// オブジェクト区切りでないなら関数名を比較
 			if (callee.name === funcName) {
-				return true;
+				return isRequireArguments(node.arguments);
 			}
 		} else {
 			// オブジェクト区切りの場合
@@ -222,9 +222,28 @@ function isRequireNode(node) {
 				target = target.object;
 			}
 			if (isMatch) {
-				return true;
+				return isRequireArguments(node.arguments);
 			}
 		}
+	}
+	return false;
+}
+
+/**
+ * 引数ノードがrequire関数の引数として正しいか
+ *
+ * @param {Node}
+ *            arg argumentsノード
+ * @returns {Boolean}
+ */
+function isRequireArguments(arg) {
+	if (arg.length !== 1) {
+		return false;
+	}
+	var val = arg[0] && arg[0].value;
+	if (typeof val === 'string' && val.lastIndexOf('.ejs') !== val.length - 4) {
+		// 引数は1つでかつ文字列、かつejsファイルじゃないなら依存定義とみなす
+		return true;
 	}
 	return false;
 }
@@ -252,7 +271,7 @@ function createSrcInfo(text) {
 				names.push(name);
 				return;
 			}
-			if (isRequireNode(node)) {
+			if (isRequireCalleeNode(node)) {
 				var val = node.arguments[0].value;
 				// ejsは除く
 				if (val.lastIndexOf('.ejs') === val.length - 4) {
@@ -325,8 +344,9 @@ function createDependsInfoObject(text) {
 			}
 
 			// ソースファイル中にrequire呼び出しがある場合、ソース間の依存関係があるとみなす
-			if (isRequireNode(node)) {
+			if (isRequireCalleeNode(node)) {
 				var val = node.arguments[0].value;
+
 				// ejsは除く
 				if (val.lastIndexOf('.ejs') === val.length - 4) {
 					return;
@@ -335,12 +355,9 @@ function createDependsInfoObject(text) {
 			}
 
 			// オブジェクト定義の値にrequire呼び出しがある場合はそのオブジェクトが定義されている名前空間と紐づける
-			if (node.type === Syntax.Property && isRequireNode(node.value)) {
+			if (node.type === Syntax.Property
+					&& isRequireCalleeNode(node.value)) {
 				var val = node.value.arguments[0].value;
-				// ejsは除く
-				if (val.lastIndexOf('.ejs') === val.length - 4) {
-					return;
-				}
 
 				var def = parent;
 				for ( var name in nameToDefObj) {
@@ -388,7 +405,7 @@ function createDependsInfoObject(text) {
  * @param def
  * @param func
  */
-function doForEachDef(def, func) {
+function doForEachInfosDef(def, func) {
 	function innerExec(d, parent) {
 		func(d, parent);
 		if (typeof d === 'string') {
@@ -407,7 +424,7 @@ function doForEachDef(def, func) {
  * @param def
  * @param func
  */
-function doForEachDefDepthFirst(def, func) {
+function doForEachInfosDefDepthFirst(def, func) {
 	function innerExec(d, parent) {
 		if (typeof d === 'string') {
 			return;
@@ -426,7 +443,7 @@ function doForEachDefDepthFirst(def, func) {
  */
 function getReferenceable(info) {
 	var ret = [];
-	doForEachDef(info, function(o) {
+	doForEachInfosDef(info, function(o) {
 		ret.push(o);
 	});
 	return ret;
@@ -477,7 +494,7 @@ function parseFile(fileList) {
 			var text = '';
 			var str;
 			while ((str = br.readLine()) != null) {
-				text += str;
+				text += str + '\n';
 			}
 			br.close();
 			print('[読み込み完了] ' + file);
@@ -493,6 +510,7 @@ function createDependencyTree(srcMap) {
 	var namespaceSrcInfoMap = {};
 	var srcNamespaceMap = {};
 	var namespaceNamespaceInfoMap = {};
+	var missings = [];
 
 	// 依存関係を求める
 	// 最初に、全てのjsファイルを分析して、ツリーの作成に必要なリスト、マップを作成する
@@ -523,11 +541,20 @@ function createDependencyTree(srcMap) {
 	// -------------------------------------
 
 	// srcInfo.dependsにある名前(文字列)をSrcInfoオブジェクトに変更
+	// ない場合はmissingsに追加して、dependsから取り除く
 	for (var i = 0, l = srcInfos.length; i < l; i++) {
 		var srcInfo = srcInfos[i];
 		var depends = srcInfo.depends;
 		for (var j = 0, len = depends.length; j < len; j++) {
-			depends.splice(j, 1, namespaceSrcInfoMap[depends[j]]);
+			var replaceInfo = namespaceSrcInfoMap[depends[j]];
+			if (replaceInfo) {
+				depends.splice(j, 1, replaceInfo);
+			} else {
+				missings.push(depends[j]);
+				depends.splice(j, 1);
+				j--;
+				len--;
+			}
 		}
 	}
 	// ツリーの作成
@@ -600,7 +627,7 @@ function createDependencyTree(srcMap) {
 		if (checkedDefs.indexOf(info) !== -1) {
 			continue;
 		}
-		doForEachDefDepthFirst(info, function(s) {
+		doForEachInfosDefDepthFirst(info, function(s) {
 			if (checkedDefs.indexOf(s) !== -1) {
 				return;
 			}
@@ -614,7 +641,8 @@ function createDependencyTree(srcMap) {
 		srcNamespaceMap : srcNamespaceMap,
 		srcDependencyTree : srcDependencyTree,
 		namespaceDependencyTree : namespaceDependencyTree,
-		srcList : srcList
+		srcList : srcList,
+		missings : missings
 	});
 }
 
@@ -640,6 +668,7 @@ function returnResult(resultObj) {
 	var srcDependencyTree = resultObj.srcDependencyTree;
 	var namespaceDependencyTree = resultObj.namespaceDependencyTree;
 	var srcList = resultObj.srcList;
+	var missings = resultObj.missings;
 
 	if (isNodeJs) {
 		res.writeHead(200, {
@@ -648,6 +677,11 @@ function returnResult(resultObj) {
 		res.write('【依存関係に基づいたソースの読み込み順序】\n');
 		res.write(JSON.stringify(srcList, null, "    "));
 		res.write('\n\n');
+		if (missings.length) {
+			res.write('【定義箇所が見つからなかったリソースキー】\n');
+			res.write(JSON.stringify(missings, null, "    "));
+			res.write('\n\n');
+		}
 		res.write('【ソースと名前空間定義の対応】\n');
 		res.write(JSON.stringify(srcNamespaceMap, null, "    "));
 		res.write('\n\n');
