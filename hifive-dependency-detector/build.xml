@@ -16,7 +16,7 @@
 		<mkdir dir="${build.dir}" />
 	</target>
 
-	<target name="build" depends="clean">
+	<target name="marge" depends="clean">
 		<property name="src.dir" value="WebContent/app" />
 		<!-- require関数の別名定義 -->
 		<!-- <property name="require.functions" value="h5.res.require,req,util.req" /> -->
@@ -31,7 +31,9 @@
 
 		<property name="output.dir" location="${build.dir}" />
 		<echo message="結合したファイルを${build.dir}/${build.dev.filename}に出力しました。" />
+	</target>
 
+	<target name="minify" depends="">
 		<!-- ClosureCompilerを使ってmin版の作成 -->
 		<jscomp compilationLevel="simple" debug="false" output="${build.dir}/${build.min.filename}">
 			<sources dir="${build.dir}">
@@ -39,5 +41,8 @@
 			</sources>
 		</jscomp>
 		<echo message="minifyしたファイル${build.dir}/${build.min.filename}に出力しました。" />
+	</target>
+
+	<target name="build" depends="marge, minify">
 	</target>
 </project>
