@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project name="MargeSrcBuilder" basedir="." default="build">
+	<property name="lib.project.dir" value="lib" />
 	<property name="build.dir" value="WebContent/build" />
-	<property name="build.filename" value="marge.js" />
+	<property name="build.dev.filename" value="marge.js" />
+	<property name="build.min.filename" value="marge.min.js" />
 
 	<path id="base.path">
 		<fileset dir="${lib.project.dir}" includes="**/*.jar" />
 	</path>
+
+	<taskdef name="jscomp" classname="com.google.javascript.jscomp.ant.CompileTask" classpathref="base.path" />
 
 	<target name="clean">
 		<delete dir="${build.dir}" />
@@ -20,12 +24,20 @@
 		<script language="javascript" src="src/getSrcList.js">
 		</script>
 
-		<concat destfile="${build.dir}/${build.filename}" encoding="utf-8" outputencoding="utf-8" fixlastline="yes">
+		<concat destfile="${build.dir}/${build.dev.filename}" encoding="utf-8" outputencoding="utf-8" fixlastline="yes">
 			<filelist files="${srcList}" />
 		</concat>
 		<echo message="${srcList}" />
 
 		<property name="output.dir" location="${build.dir}" />
-		<echo message="ビルドしたファイルを${build.dir}に出力しました。" />
+		<echo message="結合したファイルを${build.dir}/${build.dev.filename}に出力しました。" />
+
+		<!-- ClosureCompilerを使ってmin版の作成 -->
+		<jscomp compilationLevel="simple" debug="false" output="${build.dir}/${build.min.filename}">
+			<sources dir="${build.dir}">
+				<file name="${build.dev.filename}" />
+			</sources>
+		</jscomp>
+		<echo message="minifyしたファイル${build.dir}/${build.min.filename}に出力しました。" />
 	</target>
 </project>
