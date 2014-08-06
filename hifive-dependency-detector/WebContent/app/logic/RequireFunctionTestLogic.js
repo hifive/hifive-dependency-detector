@@ -1,3 +1,7 @@
+h5.u.obj.expose('util',{
+	req: h5.res.require
+});
+
 (function() {
 	h5.core.expose({
 		__name: 'app.logic.ReuireFunctionTestLogic',

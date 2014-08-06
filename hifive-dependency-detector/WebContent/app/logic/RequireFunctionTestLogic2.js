@@ -1,3 +1,5 @@
+var req = h5.res.require;
+
 (function() {
 	h5.core.expose({
 		__name: 'app.logic.ReuireFunctionTestLogic2',
