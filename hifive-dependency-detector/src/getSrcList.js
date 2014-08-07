@@ -68,6 +68,7 @@ if (isNodeJs) {
 	importClass(java.io.File);
 	importClass(java.io.FileReader);
 	importClass(java.io.BufferedReader);
+	importClass(Packages.org.apache.commons.io.FileUtils);
 
 	print = (function() {
 		var echo = MargeSrcBuilder.createTask('echo');
@@ -77,10 +78,11 @@ if (isNodeJs) {
 		};
 	})();
 	require = function(path) {
-		eval(''
-				+ new java.lang.String(java.nio.file.Files
-						.readAllBytes(java.nio.file.Paths.get(path))));
-
+		var data = java.nio.file.Paths.get(path);
+		var content = java.nio.file.Files.readAllBytes(data);
+		var str = new java.lang.String(content);
+		var src = '' + str;
+		eval('' + str);
 	};
 	// 外部jsをインクルード
 	require(PATH_ESPRIMA_ANT); // esprima
@@ -490,15 +492,9 @@ function parseFile(fileList) {
 	} else {
 		for (var i = 0; i < length; i++) {
 			var file = fileList[i];
-			var br = new BufferedReader(new FileReader(new File(file)));
-			var text = '';
-			var str;
-			while ((str = br.readLine()) != null) {
-				text += str + '\n';
-			}
-			br.close();
+			var text = FileUtils.readFileToString(new File(file), "utf-8");
 			print('[読み込み完了] ' + file);
-			srcMap[file] = text;
+			srcMap[file] = '' + text;
 		}
 		next(srcMap);
 	}

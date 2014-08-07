@@ -21,7 +21,7 @@
 		<!-- require関数の別名定義 -->
 		<!-- <property name="require.functions" value="h5.res.require,req,util.req" /> -->
 
-		<script language="javascript" src="src/getSrcList.js">
+		<script language="javascript" src="src/getSrcList.js" classpathref="base.path">
 		</script>
 
 		<concat destfile="${build.dir}/${build.dev.filename}" encoding="utf-8" outputencoding="utf-8" fixlastline="yes">
