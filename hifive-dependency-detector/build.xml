@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project name="MargeSrcBuilder" basedir="." default="build">
+	<property file="build.properties" />
 	<property name="lib.project.dir" value="lib" />
-	<property name="build.dir" value="WebContent/build" />
-	<property name="build.dev.filename" value="marge.js" />
-	<property name="build.min.filename" value="marge.min.js" />
 
 	<path id="base.path">
 		<fileset dir="${lib.project.dir}" includes="**/*.jar" />
@@ -17,11 +15,7 @@
 	</target>
 
 	<target name="marge" depends="clean">
-		<property name="src.dir" value="WebContent/app" />
-		<!-- require関数の別名定義 -->
-		<!-- <property name="require.functions" value="h5.res.require,req,util.req" /> -->
-
-		<script language="javascript" src="src/getSrcList.js" classpathref="base.path">
+		<script language="javascript" src="${main.js}" classpathref="base.path">
 		</script>
 
 		<concat destfile="${build.dir}/${build.dev.filename}" encoding="utf-8" outputencoding="utf-8" fixlastline="yes">

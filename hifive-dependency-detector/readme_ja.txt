@@ -2,20 +2,20 @@ hifive-dependency-detector
 ----------------------------------------------
 hifiveで記述された複数のソースファイル(jsファイル)について、依存関係を解析し、読み込むjsファイルの順番を計算するツールです。
 
-ツール本体は、src/getSrcList.js です。
+src/dependencyDetector.js で定義されているdetectDependency()関数を実行すると依存関係の計算結果が返ってきます。
 
-Antタスクから利用する方法と、node.jsを利用する方法があります。
+src/main.js が、detectDependency()に引数をセットして呼び出すためのメインjsファイルです。
+設定ファイルは、node.js及びAntからの実行のどちらの場合もbuild.propertiesを読み込んでいます。
+
+以下、サンプルの実行手順です。
 
 1. Antから利用する方法
-	${src.dir}プロパティに、依存関係を解析したいjsファイルを含むディレクトリを指定してください。
-	<script>タグを使って、getSrcList.jsを実行します。
-	実行すると${srcList}プロパティに値が代入されます。
+	<script>タグを使って、main.jsを実行します。
 	build.xml を参考にしてください。
 
 2. node.jsを利用する方法
-	getSrcList.jsのsrcDir変数に依存関係を解析したいjsファイルを含むディレクトリを指定してください。
-	node.jsを使ってgetSrcList.jsを呼び出すと、ポート8081でサーバが立ち上がります。
-	(ポート番号の変更はgetSrcList.jsのコメントに従って修正してください。)
+	node.jsを使ってmain.jsを呼び出すと、ポート8081でサーバが立ち上がります。
+	(ポート番号の変更はmain.jsのコメントに従って修正してください。)
 	ブラウザでhttp://localhost:8081/ にアクセスすると、解析結果がブラウザに表示されます。
 
 

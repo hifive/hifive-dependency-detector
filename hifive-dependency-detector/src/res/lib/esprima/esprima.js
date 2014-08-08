@@ -55,6 +55,7 @@ parseStatement: true, parseSourceElement: true */
 		factory(exports);
 	} else {
 		factory((root.esprima = {}));
+		print(root.common);
 	}
 }
 		(
