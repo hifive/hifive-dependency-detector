@@ -18,12 +18,13 @@
 		<script language="javascript" src="${main.js}" classpathref="base.path">
 		</script>
 
-		<concat destfile="${build.dir}/${build.dev.filename}" encoding="utf-8" outputencoding="utf-8" fixlastline="yes">
+		<concat destfile="${build.dir}/${build.dev.filename}" encoding="${src.encoding}" outputencoding="${src.encoding}" fixlastline="yes">
 			<filelist files="${srcList}" />
 		</concat>
 		<echo message="${srcList}" />
 
 		<property name="output.dir" location="${build.dir}" />
+
 		<echo message="結合したファイルを${build.dir}/${build.dev.filename}に出力しました。" />
 	</target>
 
@@ -38,5 +39,22 @@
 	</target>
 
 	<target name="build" depends="marge, minify">
+		<!-- ヘッダの追加 -->
+		<!-- tmpフォルダにいったん移す -->
+		<property name="tmp.dir" value="${build.dir}/tmp" />
+		<mkdir dir="${tmp.dir}" />
+		<move file="${build.dir}/${build.dev.filename}" todir="${tmp.dir}" />
+		<move file="${build.dir}/${build.min.filename}" todir="${tmp.dir}" />
+		<!-- ヘッダを結合して出力 -->
+		<concat destfile="${build.dir}/${build.dev.filename}" encoding="${src.encoding}" outputencoding="${src.encoding}" fixlastline="true">
+			<filelist files="${dev.header.file},${tmp.dir}/${build.dev.filename}" />
+		</concat>
+		<concat destfile="${build.dir}/${build.min.filename}" encoding="${src.encoding}" outputencoding="${src.encoding}" fixlastline="true">
+			<filelist files="${min.header.file},${tmp.dir}/${build.min.filename}" />
+		</concat>
+
+		<delete dir="${tmp.dir}" />
+
+		<echo message="ヘッダを結合しました" />
 	</target>
 </project>
