@@ -5,13 +5,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="initial-scale=1.0">
 
-<script src="res/lib/jquery/jquery-1.11.1.js"></script>
+<!-- IE8以下なら1系、それ以外なら2系のjQueryを使用する -->
+<!--[if lt IE 9]>
+<script src="/hifive-res/ext/jquery/jquery-1.js"></script>
+<![endif]-->
+<!--[if gte IE 9]><!-->
+<script src="/hifive-res/ext/jquery/jquery-2.js"></script>
+<!--<![endif]-->
+
 
 <link rel="stylesheet" href="res/lib/hifive/h5.css" />
 <script src="res/lib/hifive/ejs-h5mod.js"></script>
 <script src="res/lib/hifive/h5.dev.js"></script>
 
-<script src="res/lib/h5-dev-tool/h5-dev-tool.js"></script>
+<script src="/hifive-res/devtool/1.0.1/h5.devtool.js"></script>
 
 <script src="build/marge.min.js"></script>
 <!-- <script src="app/logic/Grand2Logic.js"></script> -->
